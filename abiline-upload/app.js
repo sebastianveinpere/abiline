@@ -216,7 +216,7 @@ function vHome() {
     <div class="bigring">${ring(148, 64, 14, g.kcal ? t.kcal / g.kcal : 0, '#2a5145', '#f4f0e8')}
       <div class="bigring-t"><div class="num xl">${r0(Math.abs(left))}</div><div class="s12 mint">${left >= 0 ? 'kcal jäänud' : 'kcal üle'}</div><div class="s11 mint">${r0(t.kcal)} / ${r0(g.kcal)}</div></div>
     </div>
-    <div class="macros">${macro('Valk', t.p, g.p, '#d9a066')}${macro('Rasv', t.f, g.f, '#f0d9a8')}${macro('Süsivesikud', t.c, g.c, '#8fc7a8')}</div>
+    <div class="macros">${macro('Valk', t.p, g.p, '#d9a066')}${macro('Rasv', t.f, g.f, '#f0d9a8')}${macro('Süsivesikud', t.c, g.c, '#8fc7a8')}<button class="link" data-a="goals" style="min-height:44px;margin:-8px 0 -12px;text-decoration:underline;font-weight:600">Muuda sihte</button></div>
   </section>
   <section class="col g8">
     <div class="between"><h2 class="h2">Söödud</h2><button class="link" data-a="food">${I.plusS}Lisa toit</button></div>
@@ -313,7 +313,9 @@ function vMore() {
   let wHead = '';
   if (pts.length >= 2) { const df = pts[pts.length - 1].kg - pts[0].kg; wHead = `<span class="mute" style="font-size:14px">${fmt(pts[0].kg, 1)} → ${fmt(pts[pts.length - 1].kg, 1)} kg</span> <span class="num m brown">${df > 0 ? '+' : ''}${fmt(df, 1)} kg</span>`; }
   return `
-  <header class="top"><h1 class="h1">Keskmised</h1></header>
+  <header class="top"><h1 class="h1">Rohkem</h1></header>
+  <section class="grid2" style="gap:10px"><button class="btn line" data-a="goals">Makrosihid</button><button class="btn line" data-a="foods">Minu toidud</button></section>
+  <h2 class="h2">Keskmised</h2>
   <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${Object.entries(AVG).map(([k, [l]]) => `<button class="${k === ui.avg ? 'on' : ''}" data-a="avg" data-k="${k}" aria-pressed="${k === ui.avg}">${l}</button>`).join('')}</div>
   <section class="card dark col g12">
     <div class="between base"><h2 class="h2">Keskmiselt päevas</h2><span class="s12 mint">${n} / ${days} päeva sisestatud</span></div>
@@ -324,7 +326,6 @@ function vMore() {
     <div class="between base"><h2 class="h2">Kaal</h2><span>${wHead}</span></div>
     ${ch.html}
   </section>
-  <section class="grid2" style="gap:10px"><button class="btn line" data-a="goals">Makrosihid</button><button class="btn line" data-a="foods">Minu toidud</button></section>
   <section class="col g8">
     <h2 class="h2">Andmed</h2>
     <div class="sub">Kõik on salvestatud ainult sellesse seadmesse. Varukoopia sisaldab kõike peale visioonitahvli piltide.</div>
