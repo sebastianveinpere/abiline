@@ -1,5 +1,5 @@
 // Abiline: töötab ka ilma netita. Uuenduse korral muuda versiooninumbrit.
-const CACHE = 'abiline-v1';
+const CACHE = 'abiline-v2';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png',
