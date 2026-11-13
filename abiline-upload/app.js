@@ -112,6 +112,11 @@ function weightAt(date) {
 const byTime = (a, b) => { const x = a.time || '99:99', y = b.time || '99:99'; return x < y ? -1 : x > y ? 1 : 0; };
 const planOf = date => (S.plan[date] || []).slice().sort(byTime);
 function occurs(ev, date) {
+  const dur = ev.end && ev.end > ev.date ? Math.min(366, Math.round((pd(ev.end) - pd(ev.date)) / 864e5)) : 0;
+  for (let k = 0; k <= dur; k++) if (occursStart(ev, k ? addDays(date, -k) : date)) return true;
+  return false;
+}
+function occursStart(ev, date) {
   if (date < ev.date) return false;
   if (ev.date === date) return true;
   const a = pd(ev.date), b = pd(date);
@@ -124,11 +129,12 @@ const eventsOn = date => S.events.filter(e => occurs(e, date)).sort((x, y) => (x
 function upcoming(n) {
   const out = []; let d = today();
   for (let i = 0; i < 365 && out.length < n; i++) {
-    for (const e of eventsOn(d)) { if (out.length < n) out.push({ e, date: d }); }
+    for (const e of eventsOn(d)) { if (out.length < n && (i === 0 || occursStart(e, d))) out.push({ e, date: d }); }
     d = addDays(d, 1);
   }
   return out;
 }
+const evWhen = e => e.end && e.end > e.date ? `${shortDate(e.date)} – ${shortDate(e.end)}${e.time ? ' · ' + e.time : ''}` : (e.time || 'Terve päev');
 const REPEAT = { none: 'Ei kordu', weekly: 'Iga nädal', monthly: 'Iga kuu', yearly: 'Iga aasta' };
 const KINDS = { month: 'Kuu', quarter: 'Kvartal', half: 'Pool aastat', year: 'Aasta' };
 function periodInfo(kind, off) {
@@ -246,7 +252,7 @@ function vCal() {
   <div class="month">${cells}</div>
   <section class="col g8">
     <div class="between"><h2 class="h2">Tulemas</h2><button class="link" data-a="eventNew">${I.plusS}Lisa sündmus</button></div>
-    ${up.length ? `<div class="list">${up.map(({ e, date }) => { const d = pd(date); return `<button class="rowbtn" data-a="eventEdit" data-id="${e.id}" style="justify-content:flex-start;gap:14px"><span class="evdate"><span class="num l brown" style="display:block">${d.getDate()}</span><span class="s11 mute">${MON3[d.getMonth()]}</span></span><span class="grow"><span class="sb" style="display:block">${esc(e.title)}</span><span class="s12 mute">${e.time || 'Terve päev'}${e.repeat && e.repeat !== 'none' ? ` · ${REPEAT[e.repeat].toLowerCase()}` : ''}</span></span></button>`; }).join('')}</div>`
+    ${up.length ? `<div class="list">${up.map(({ e, date }) => { const d = pd(date); return `<button class="rowbtn" data-a="eventEdit" data-id="${e.id}" style="justify-content:flex-start;gap:14px"><span class="evdate"><span class="num l brown" style="display:block">${d.getDate()}</span><span class="s11 mute">${MON3[d.getMonth()]}</span></span><span class="grow"><span class="sb" style="display:block">${esc(e.title)}</span><span class="s12 mute">${evWhen(e)}${e.repeat && e.repeat !== 'none' ? ` · ${REPEAT[e.repeat].toLowerCase()}` : ''}</span></span></button>`; }).join('')}</div>`
       : `<div class="empty">Ühtegi sündmust pole kirjas. Vajuta päevale või nupule „Lisa sündmus“.</div>`}
   </section>`;
 }
@@ -343,6 +349,8 @@ function foodRows(manage) {
 }
 const foodSearch = () => `<div class="search">${I.search}<label class="vh" for="q">Otsi toitu</label><input id="q" type="search" placeholder="Otsi toitu" autocomplete="off" value="${esc(ui.q)}"></div>`;
 const SHEETS = {
+  add: () => `${sheetTop('Lisa', longDate(ui.date))}
+    <div class="col g8">${[['food', 'Toit', 'Söödud toit ja makrod'], ['weight', 'Kaal', 'Selle päeva kaalumine'], ['plan', 'Päevaplaan', 'Tegevus selleks päevaks'], ['eventNew', 'Sündmus', 'Üritus, tähtpäev või pikem periood'], ['targetNew', 'Eesmärk', 'Kuu, kvartali, poole aasta või aasta siht'], ['visNew', 'Visiooni pilt', 'Pilt ja kommentaar visioonitahvlile']].map(([a, t, d]) => `<button class="card" data-a="${a}" style="padding:16px"><span class="b" style="font-size:17px">${t}</span><span class="s12 mute">${d}</span></button>`).join('')}</div>`,
   food: () => `${sheetTop('Lisa toit', longDate(ui.date))}
     <form class="card dark col g12" data-form="quick">
       <div class="between base"><h2 class="h2">Kiirlisamine</h2><span class="s12 mint">ainult selle päeva alla</span></div>
@@ -404,7 +412,7 @@ const SHEETS = {
     ${plan.length ? `<div class="list" style="padding-right:4px">${plan.map(p => `<div class="between" style="min-height:56px;gap:4px"><button class="tickrow" data-a="planTick" data-id="${p.id}" role="checkbox" aria-checked="${!!p.done}"><span class="tick${p.done ? ' on' : ''}">${I.check}</span><span class="${p.time ? 'num' : 's12 mute'}" style="width:46px;flex:none;${p.time ? `font-size:20px;color:${p.done ? 'var(--mute)' : 'var(--brown)'}` : ''}">${p.time || 'millalgi'}</span><span class="${p.done ? 'strike' : 'sb'}">${esc(p.text)}</span></button><button class="link" data-a="planDel" data-id="${p.id}" aria-label="Kustuta ${esc(p.text)}">${I.xs}</button></div>`).join('')}</div>`
       : `<div class="empty">Selle päeva plaan on tühi. Kirjuta üleval, mida teed. Kellaaeg on valikuline.</div>`}
     <section class="col g8"><h2 class="h2">Kalendrist</h2>
-      ${evs.length ? `<div class="list">${evs.map(e => `<div style="padding:11px 0"><span class="sb" style="display:block">${esc(e.title)}</span><span class="s12 mute">${e.time || 'Terve päev'}</span></div>`).join('')}</div>` : `<div class="empty">Sel päeval pole kalendris midagi.</div>`}
+      ${evs.length ? `<div class="list">${evs.map(e => `<div style="padding:11px 0"><span class="sb" style="display:block">${esc(e.title)}</span><span class="s12 mute">${evWhen(e)}</span></div>`).join('')}</div>` : `<div class="empty">Sel päeval pole kalendris midagi.</div>`}
     </section>`;
   },
   hist: () => {
@@ -430,10 +438,12 @@ const SHEETS = {
     const e = S.events.find(x => x.id === id) || { date: date || today(), repeat: 'none' };
     const same = !id && date ? eventsOn(date) : [];
     return `${sheetTop(id ? 'Muuda sündmust' : 'Uus sündmus', longDate(e.date))}
-    ${same.length ? `<section class="col g8"><h2 class="h2">Sel päeval juba kirjas</h2><div class="list">${same.map(x => `<button class="rowbtn" data-a="eventEdit" data-id="${x.id}"><span class="grow"><span class="sb" style="display:block">${esc(x.title)}</span><span class="s12 mute">${x.time || 'Terve päev'}</span></span><span class="s12 brown b">Muuda</span></button>`).join('')}</div></section>` : ''}
+    ${same.length ? `<section class="col g8"><h2 class="h2">Sel päeval juba kirjas</h2><div class="list">${same.map(x => `<button class="rowbtn" data-a="eventEdit" data-id="${x.id}"><span class="grow"><span class="sb" style="display:block">${esc(x.title)}</span><span class="s12 mute">${evWhen(x)}</span></span><span class="s12 brown b">Muuda</span></button>`).join('')}</div></section>` : ''}
     <form class="col g12" data-form="event" data-id="${id || ''}">
       ${field('f-title', 'Mis toimub?', `value="${esc(e.title || '')}" placeholder="nt ema sünnipäev"`)}
-      <div class="grid2">${field('f-date', 'Kuupäev', `type="date" value="${e.date}" required`)}${field('f-time', 'Kell (valikuline)', `type="time" value="${e.time || ''}"`)}</div>
+      <div class="grid2">${field('f-date', 'Algus', `type="date" value="${e.date}" required`)}${field('f-end', 'Lõpp (valikuline)', `type="date" value="${e.end || ''}"`)}</div>
+      <div class="sub">Pikema perioodi jaoks, nt vaheaeg 5.–10. dets, pane ka lõpukuupäev.</div>
+      ${field('f-time', 'Kell (valikuline)', `type="time" value="${e.time || ''}"`)}
       <div class="field"><label for="f-repeat">Kordumine</label><select class="in" id="f-repeat" name="repeat">${Object.entries(REPEAT).map(([k, l]) => `<option value="${k}"${k === (e.repeat || 'none') ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <button class="btn">Salvesta</button>
     </form>
@@ -479,7 +489,7 @@ const SHEETS = {
 function nav(r) {
   const it = (h, label, icon, on) => `<a href="#${h}" class="${on ? 'on' : ''}" ${on ? 'aria-current="page"' : ''}>${icon}${label}</a>`;
   return it('kodu', 'Kodu', I.home, r === 'kodu') + it('kalender', 'Kalender', I.cal, r === 'kalender')
-    + `<div class="fabw"><button class="fab" data-a="food" aria-label="Lisa toit">${I.plusL}</button></div>`
+    + `<div class="fabw"><button class="fab" data-a="add" aria-label="Lisa">${I.plusL}</button></div>`
     + it('eesmargid', 'Eesmärgid', I.target, r === 'eesmargid' || r === 'visioon') + it('rohkem', 'Rohkem', I.menu, r === 'rohkem');
 }
 function renderSheet() {
@@ -506,6 +516,7 @@ const findTarget = id => S.targets.find(t => t.id === id);
 const A = {
   close,
   day: ({ n }) => { ui.date = addDays(ui.date, +n); render(); },
+  add: () => open('add'),
   food: () => open('food'),
   foods: () => open('foods'),
   goals: () => open('goals'),
@@ -585,7 +596,7 @@ const F = {
     save(); close();
   },
   goals: fd => { S.goals = macrosOf(fd); save(); close(); toast('Sihid salvestatud'); },
-  weight: fd => { const kg = num(fd.kg); if (!kg) return toast('Kirjuta kaal kilodes'); S.weight[ui.date] = Math.round(kg * 10) / 10; save(); close(); },
+  weight: fd => { const kg = num(fd.kg); if (!kg) return toast('Kirjuta kaal kilodes'); S.weight[ui.date] = Math.round(kg * 10) / 10; save(); close(); toast('Kaal salvestatud'); },
   plan: fd => {
     const text = fd.text.trim(); if (!text) return toast('Kirjuta, mida teed');
     (S.plan[ui.date] = S.plan[ui.date] || []).push({ id: uid(), text, time: fd.time || '', done: false });
@@ -594,7 +605,7 @@ const F = {
   event: (fd, form) => {
     const title = fd.title.trim(); if (!title) return toast('Kirjuta, mis toimub');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fd.date)) return toast('Vali kuupäev');
-    const data = { title, date: fd.date, time: fd.time || '', repeat: fd.repeat || 'none' };
+    const data = { title, date: fd.date, end: /^\d{4}-\d{2}-\d{2}$/.test(fd.end || '') && fd.end > fd.date ? fd.end : '', time: fd.time || '', repeat: fd.repeat || 'none' };
     const e = S.events.find(x => x.id === form.dataset.id);
     if (e) Object.assign(e, data); else S.events.push(Object.assign({ id: uid() }, data));
     save(); ui.calM = ym(fd.date); ui.sheet = null; render(); toast('Sündmus salvestatud');
@@ -604,7 +615,7 @@ const F = {
     const t = findTarget(form.dataset.id);
     if (t) t.title = title;
     else { const kind = KINDS[fd.kind] ? fd.kind : ui.gKind; if (kind !== ui.gKind) { ui.gKind = kind; ui.gOff = 0; } S.targets.push({ id: uid(), kind, key: periodInfo(kind, ui.gOff).key, title, steps: [], done: false }); }
-    save(); close();
+    save(); close(); toast('Eesmärk salvestatud');
   },
   step: (fd, form) => {
     const text = fd.text.trim(), t = findTarget(form.dataset.t); if (!text || !t) return;
