@@ -20,7 +20,9 @@
   --navh:76px;
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;touch-action:manipulation}
+button,a,label,input,select,textarea,svg{touch-action:manipulation}
+button,a,label{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 body{margin:0;background:#e9e4d9;color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent}
 body.lock{overflow:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
