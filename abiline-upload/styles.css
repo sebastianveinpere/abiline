@@ -228,3 +228,9 @@ button.card{position:relative}
 }
 .daybtn .h1{white-space:nowrap}
 @media (max-width:359px){.streak{display:none}}
+
+/* ---------- UX-audit: tagasivõtmine, puutealad, fookus ---------- */
+#toast{display:flex;align-items:center;gap:12px}
+.tbtn{border:0;background:none;color:#f0d9a8;font-weight:700;min-height:44px;margin:-10px -4px -10px 0;padding:0 4px;text-decoration:underline;flex:none}
+button.link[aria-label]{min-width:44px;justify-content:center}
+#sheet:focus{outline:none}
