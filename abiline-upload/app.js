@@ -702,6 +702,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 render();
+{ const sp = $('#splash'); if (sp) setTimeout(() => { sp.classList.add('out'); lastKey = ''; render(); setTimeout(() => sp.remove(), 600); }, 1000); }
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
 }
