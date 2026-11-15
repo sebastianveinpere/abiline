@@ -189,6 +189,7 @@ function ring(size, r, sw, pct, track, color) {
   const c = size / 2, p = Math.max(0, Math.min(1, pct || 0)) * 100;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${track}" stroke-width="${sw}"/>${p > 0.5 ? `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" pathLength="100" stroke-dasharray="${p.toFixed(1)} 100" transform="rotate(-90 ${c} ${c})"/>` : ''}</svg>`;
 }
+const macroPlain = (label, v, color) => `<div class="macro"><span style="width:36px;height:36px;display:grid;place-items:center;flex:none"><span style="width:12px;height:12px;border-radius:6px;background:${color}"></span></span><div><div class="s12 mint">${label}</div><div class="b">${n1(v)} g</div></div></div>`;
 const macro = (label, v, g, color) => `<div class="macro">${ring(36, 14, 5, g ? v / g : 0, '#2a5145', color)}<div><div class="s12 mint">${label}</div><div class="b">${n1(v)} <span class="mint" style="font-weight:500">/ ${n1(g)} g</span></div></div></div>`;
 const sheetTop = (title, sub) => `<header class="top"><div class="grow"><h1 class="h1">${title}</h1>${sub ? `<div class="sub" style="margin-top:2px">${sub}</div>` : ''}</div><button class="ib" data-a="close" aria-label="Sulge">${I.x}</button></header>`;
 const macroFields = (v = {}) => `<div class="four">${[['kcal', 'Kcal'], ['p', 'Valk g'], ['f', 'Rasv g'], ['c', 'Süsiv. g']].map(([k, l]) => `<div class="field"><label for="m-${k}">${l}</label><input class="in" id="m-${k}" name="${k}" inputmode="decimal" autocomplete="off" value="${v[k] ?? ''}"></div>`).join('')}</div>`;
@@ -222,7 +223,7 @@ function vHome() {
     <div class="bigring">${ring(148, 64, 14, g.kcal ? t.kcal / g.kcal : 0, '#2a5145', '#f4f0e8')}
       <div class="bigring-t"><div class="num xl">${r0(Math.abs(left))}</div><div class="s12 mint">${left >= 0 ? 'kcal jäänud' : 'kcal üle'}</div><div class="s11 mint">${r0(t.kcal)} / ${r0(g.kcal)}</div></div>
     </div>
-    <div class="macros">${macro('Valk', t.p, g.p, '#d9a066')}${macro('Rasv', t.f, g.f, '#f0d9a8')}${macro('Süsivesikud', t.c, g.c, '#8fc7a8')}<button class="link" data-a="goals" style="min-height:44px;margin:-8px 0 -12px;text-decoration:underline;font-weight:600">Muuda sihte</button></div>
+    <div class="macros">${macro('Valk', t.p, g.p, '#d9a066')}${macroPlain('Rasv', t.f, '#f0d9a8')}${macroPlain('Süsivesikud', t.c, '#8fc7a8')}<button class="link" data-a="goals" style="min-height:44px;margin:-8px 0 -12px;text-decoration:underline;font-weight:600">Muuda sihte</button></div>
   </section>
   <section class="col g8">
     <div class="between"><h2 class="h2">Söödud</h2><button class="link" data-a="food">${I.plusS}Lisa toit</button></div>
@@ -316,6 +317,7 @@ function weightChart(days) {
 function vMore() {
   const days = AVG[ui.avg][1], { n, t } = averages(days), g = S.goals, ch = weightChart(days), pts = ch.pts;
   const bar = (label, v, goal, unit, color) => { const P = goal ? Math.min(100, Math.round(v / goal * 100)) : 0; return `<div class="col g4"><div class="between base" style="font-size:14px"><span>${label}</span><span><span class="b">${r0(v)}</span> <span class="mint">/ ${r0(goal)} ${unit}</span></span></div><div class="bar thin" role="img" aria-label="${goal ? Math.round(v / goal * 100) : 0} protsenti sihist"><i style="width:${P}%;background:${color}"></i></div></div>`; };
+  const plain = (label, v) => `<div class="between base" style="font-size:14px"><span>${label}</span><span class="b">${r0(v)} g</span></div>`;
   let wHead = '';
   if (pts.length >= 2) { const df = pts[pts.length - 1].kg - pts[0].kg; wHead = `<span class="mute" style="font-size:14px">${fmt(pts[0].kg, 1)} → ${fmt(pts[pts.length - 1].kg, 1)} kg</span> <span class="num m brown">${df > 0 ? '+' : ''}${fmt(df, 1)} kg</span>`; }
   return `
@@ -325,7 +327,7 @@ function vMore() {
   <div class="seg" style="grid-template-columns:repeat(5,minmax(0,1fr))">${Object.entries(AVG).map(([k, [l]]) => `<button class="${k === ui.avg ? 'on' : ''}" data-a="avg" data-k="${k}" aria-pressed="${k === ui.avg}">${l}</button>`).join('')}</div>
   <section class="card dark col g12">
     <div class="between base"><h2 class="h2">Keskmiselt päevas</h2><span class="s12 mint">${n} / ${days} päeva sisestatud</span></div>
-    ${n ? bar('Kalorid', t.kcal, g.kcal, 'kcal', '#f4f0e8') + bar('Valk', t.p, g.p, 'g', '#d9a066') + bar('Rasv', t.f, g.f, 'g', '#f0d9a8') + bar('Süsivesikud', t.c, g.c, 'g', '#8fc7a8')
+    ${n ? bar('Kalorid', t.kcal, g.kcal, 'kcal', '#f4f0e8') + bar('Valk', t.p, g.p, 'g', '#d9a066') + plain('Rasv', t.f) + plain('Süsivesikud', t.c)
       : `<div class="s12 mint" style="font-size:14px">Selles vahemikus pole ühtegi päeva sisestatud. Keskmine arvutatakse ainult nende päevade pealt, kuhu oled toitu lisanud.</div>`}
   </section>
   <section class="card col g8" style="padding:16px">
@@ -392,8 +394,8 @@ const SHEETS = {
     </form>
     <button class="btn danger" data-a="entryDel" data-id="${id}" data-confirm>Kustuta päevast</button>`;
   },
-  goals: () => `${sheetTop('Makrosihid', 'Päevane siht, mille vastu ringid täituvad')}
-    <form class="col g12" data-form="goals">${macroFields(S.goals)}<button class="btn">Salvesta</button></form>`,
+  goals: () => `${sheetTop('Makrosihid', 'Päevane kalorite ja valgu siht')}
+    <form class="col g12" data-form="goals"><div class="grid2">${field('f-kcal', 'Kalorid (kcal)', `value="${S.goals.kcal}" inputmode="decimal"`)}${field('f-p', 'Valk (g)', `value="${S.goals.p}" inputmode="decimal"`)}</div><div class="sub">Rasva ja süsivesikuid loetakse kokku ilma sihita.</div><button class="btn">Salvesta</button></form>`,
   weight: () => {
     const w = S.weight[ui.date];
     return `${sheetTop('Kaal', longDate(ui.date))}
@@ -595,7 +597,7 @@ const F = {
     Object.assign(e, macrosOf(fd), { name: fd.name.trim() || e.name, qty: num(fd.qty) || 1 });
     save(); close();
   },
-  goals: fd => { S.goals = macrosOf(fd); save(); close(); toast('Sihid salvestatud'); },
+  goals: fd => { Object.assign(S.goals, { kcal: num(fd.kcal), p: num(fd.p) }); save(); close(); toast('Sihid salvestatud'); },
   weight: fd => { const kg = num(fd.kg); if (!kg) return toast('Kirjuta kaal kilodes'); S.weight[ui.date] = Math.round(kg * 10) / 10; save(); close(); toast('Kaal salvestatud'); },
   plan: fd => {
     const text = fd.text.trim(); if (!text) return toast('Kirjuta, mida teed');
