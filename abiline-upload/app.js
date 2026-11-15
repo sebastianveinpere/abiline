@@ -6,16 +6,32 @@
 const KEY = 'abiline.v1';
 const DEF = { v: 1, goals: { kcal: 2400, p: 160, f: 75, c: 280 }, foods: [], log: {}, weight: {}, plan: {}, events: [], targets: [], vision: [] };
 const clone = o => JSON.parse(JSON.stringify(o));
+// Turvalisus: salvestatud ja imporditud andmeid ei usaldata. Iga väli kontrollitakse tüübi ja kuju järgi
+// ning kõik ehitatakse uuesti puhtasse objekti, tundmatud võtmed jäetakse välja.
+const ID_RE = /^[A-Za-z0-9_-]{1,40}$/, DATE_RE = /^\d{4}-\d{2}-\d{2}$/, TIME_RE = /^\d{2}:\d{2}$/;
+const sStr = (v, n = 200) => typeof v === 'string' ? v.slice(0, n) : '';
+const sNum = (v, max = 100000) => { const n = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) : NaN; return isFinite(n) && n >= 0 ? Math.min(n, max) : 0; };
+const sId = v => typeof v === 'string' && ID_RE.test(v) ? v : uid();
+const sDate = v => typeof v === 'string' && DATE_RE.test(v) && !isNaN(pd(v).getTime()) ? v : '';
+const sTime = v => typeof v === 'string' && TIME_RE.test(v) ? v : '';
+const sArr = (v, max = 5000) => Array.isArray(v) ? v.slice(0, max).filter(x => x && typeof x === 'object') : [];
+const sDays = v => v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).filter(k => sDate(k)) : [];
+const sMacros = x => ({ kcal: sNum(x.kcal), p: sNum(x.p), f: sNum(x.f), c: sNum(x.c) });
 function normalize(r) {
-  const s = Object.assign(clone(DEF), r && typeof r === 'object' ? r : {});
-  s.goals = Object.assign(clone(DEF.goals), s.goals || {});
-  for (const k of ['foods', 'events', 'targets', 'vision']) if (!Array.isArray(s[k])) s[k] = [];
-  for (const k of ['log', 'weight', 'plan']) if (!s[k] || typeof s[k] !== 'object') s[k] = {};
-  for (const t of s.targets) if (!Array.isArray(t.steps)) t.steps = [];
+  r = r && typeof r === 'object' ? r : {};
+  const g = r.goals && typeof r.goals === 'object' ? r.goals : {};
+  const s = { v: 1, goals: { kcal: 'kcal' in g ? sNum(g.kcal) : DEF.goals.kcal, p: 'p' in g ? sNum(g.p) : DEF.goals.p, f: sNum(g.f), c: sNum(g.c) }, foods: [], log: {}, weight: {}, plan: {}, events: [], targets: [], vision: [], lastBackup: sDate(r.lastBackup) };
+  s.foods = sArr(r.foods).map(x => Object.assign({ id: sId(x.id), name: sStr(x.name), unit: sStr(x.unit, 40) }, sMacros(x)));
+  for (const k of sDays(r.log)) { const a = sArr(r.log[k], 200).map(x => Object.assign({ id: sId(x.id), name: sStr(x.name), unit: sStr(x.unit, 40), qty: sNum(x.qty, 1000) || 1 }, sMacros(x))); if (a.length) s.log[k] = a; }
+  for (const k of sDays(r.weight)) { const n = sNum(r.weight[k], 1000); if (n) s.weight[k] = n; }
+  for (const k of sDays(r.plan)) { const a = sArr(r.plan[k], 200).map(x => ({ id: sId(x.id), text: sStr(x.text), time: sTime(x.time), done: !!x.done })); if (a.length) s.plan[k] = a; }
+  s.events = sArr(r.events).map(x => ({ id: sId(x.id), title: sStr(x.title), date: sDate(x.date), end: sDate(x.end), time: sTime(x.time), repeat: ['weekly', 'monthly', 'yearly'].includes(x.repeat) ? x.repeat : 'none' })).filter(x => x.date);
+  s.targets = sArr(r.targets).map(x => ({ id: sId(x.id), kind: ['month', 'quarter', 'half', 'year'].includes(x.kind) ? x.kind : 'month', key: sStr(x.key, 12), title: sStr(x.title), done: !!x.done, steps: sArr(x.steps, 200).map(y => ({ id: sId(y.id), text: sStr(y.text), done: !!y.done })) }));
+  s.vision = sArr(r.vision, 500).map(x => ({ id: sId(x.id), title: sStr(x.title), comment: sStr(x.comment, 4000), added: sDate(x.added) || today() }));
   return s;
 }
 function load() { try { return normalize(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return normalize(null); } }
-let S = load();
+let S; // väärtustatakse allpool, kui abifunktsioonid on olemas
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Salvestamine ei õnnestunud'); } }
 
 // pildid
@@ -53,13 +69,15 @@ function loadImgs() {
   });
 }
 async function shrink(file) {
+  // Ainult pildid, mõistliku suurusega. Pilt joonistatakse uuesti JPEG-iks, mis eemaldab ka asukoha ja muu metaandmestiku.
+  if (!/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(file.type) || file.size > 25 * 1024 * 1024) throw new Error('type');
   const bmp = await createImageBitmap(file).catch(() => null);
-  if (!bmp) return file;
+  if (!bmp) throw new Error('decode');
   const s = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
   const c = document.createElement('canvas');
   c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
   c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise(r => c.toBlob(b => r(b || file), 'image/jpeg', 0.85));
+  return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', 0.85));
 }
 
 // ---------- abifunktsioonid ----------
@@ -192,7 +210,7 @@ function ring(size, r, sw, pct, track, color) {
 const macroPlain = (label, v, color) => `<div class="macro"><span style="width:36px;height:36px;display:grid;place-items:center;flex:none"><span style="width:12px;height:12px;border-radius:6px;background:${color}"></span></span><div><div class="s12 mint">${label}</div><div class="b">${n1(v)} g</div></div></div>`;
 const macro = (label, v, g, color) => `<div class="macro">${ring(36, 14, 5, g ? v / g : 0, '#2a5145', color)}<div><div class="s12 mint">${label}</div><div class="b">${n1(v)} <span class="mint" style="font-weight:500">/ ${n1(g)} g</span></div></div></div>`;
 const sheetTop = (title, sub) => `<header class="top"><div class="grow"><h1 class="h1">${title}</h1>${sub ? `<div class="sub" style="margin-top:2px">${sub}</div>` : ''}</div><button class="ib" data-a="close" aria-label="Sulge">${I.x}</button></header>`;
-const macroFields = (v = {}) => `<div class="four">${[['kcal', 'Kcal'], ['p', 'Valk g'], ['f', 'Rasv g'], ['c', 'Süsiv. g']].map(([k, l]) => `<div class="field"><label for="m-${k}">${l}</label><input class="in" id="m-${k}" name="${k}" inputmode="decimal" autocomplete="off" value="${v[k] ?? ''}"></div>`).join('')}</div>`;
+const macroFields = (v = {}) => `<div class="four">${[['kcal', 'Kcal'], ['p', 'Valk g'], ['f', 'Rasv g'], ['c', 'Süsiv. g']].map(([k, l]) => `<div class="field"><label for="m-${k}">${l}</label><input class="in" id="m-${k}" name="${k}" inputmode="decimal" autocomplete="off" value="${esc(v[k] ?? '')}"></div>`).join('')}</div>`;
 const field = (id, label, attrs = '') => `<div class="field"><label for="${id}">${label}</label><input class="in" id="${id}" name="${id.replace(/^f-/, '')}" autocomplete="off" ${attrs}></div>`;
 const dayNav = () => `<div class="row8"><button class="ib" data-a="day" data-n="-1" aria-label="Eelmine päev">${I.left}</button><button class="ib" data-a="day" data-n="1" aria-label="Järgmine päev">${I.right}</button></div>`;
 
@@ -216,6 +234,8 @@ const route = () => { const h = location.hash.slice(1); return TABS.includes(h) 
 const ym = s => { const d = pd(s); return { y: d.getFullYear(), m: d.getMonth() }; };
 const ui = { date: today(), sheet: null, calM: ym(today()), histM: null, histSel: null, gKind: 'month', gOff: 0, avg: 'month', q: '', pending: null };
 let lastToday = today();
+
+S = load();
 
 // ---------- vaated ----------
 function vHome() {
@@ -248,7 +268,7 @@ function vHome() {
   <section class="grid2">
     <button class="card" data-a="weight"><span class="s12 mute">Kaal</span><span class="num l green">${w ? `${fmt(w.kg, 1)} kg` : '–'}</span><span class="s12 mute">${wSub}</span>${spark(d)}</button>
     <button class="card" data-a="plan"><span class="s12 mute">Päevaplaan</span><span class="num l green">${plan.length ? `${done} / ${plan.length}` : '–'}</span><span class="s12 mute cut" style="max-width:100%">${!plan.length ? 'Lisa plaan' : next ? `Järgmine: ${next.time ? next.time + ' ' : ''}${esc(next.text)}` : 'Kõik tehtud'}</span>${plan.length ? `<span class="bar thin" style="width:100%;margin-top:6px"><i style="width:${Math.round(done / plan.length * 100)}%;background:var(--green)"></i></span>` : ''}</button>
-  </section>`;
+  </section>${backupHint()}`;
 }
 
 function vCal() {
@@ -351,7 +371,7 @@ function vMore() {
   </section>
   <section class="col g8">
     <h2 class="h2">Andmed</h2>
-    <div class="sub">Kõik on salvestatud ainult sellesse seadmesse. Varukoopia sisaldab kõike peale visioonitahvli piltide.</div>
+    <div class="sub">Kõik on salvestatud ainult sellesse seadmesse. Varukoopia sisaldab kõike peale visioonitahvli piltide. ${S.lastBackup ? `Viimane varukoopia: ${shortDate(S.lastBackup)}.` : 'Varukoopiat pole veel tehtud.'}</div>
     <div class="grid2" style="gap:10px"><button class="btn line" data-a="export">Lae varukoopia alla</button><label class="btn line" style="display:grid;place-items:center;cursor:pointer"><input type="file" accept="application/json,.json" class="vh" data-in="import">Taasta varukoopiast</label></div>
   </section>`;
 }
@@ -362,7 +382,7 @@ function foodRows(manage) {
   if (!S.foods.length) return `<div class="empty">Sul pole veel salvestatud toite. Lisa siia asjad, mida sööd tihti, nt kohupiim.</div>`;
   const fs = S.foods.filter(f => !q || f.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name, 'et'));
   if (!fs.length) return `<div class="empty">Otsingule „${esc(ui.q)}“ ei vasta ükski toit.</div>`;
-  return `<div class="list" style="padding-right:8px">${fs.map(f => `<div class="between" style="padding:6px 0"><button class="tickrow" style="display:block" data-a="foodEdit" data-id="${f.id}" aria-label="Muuda toitu ${esc(f.name)}"><span class="sb">${esc(f.name)}</span>${f.unit ? ` <span class="mute">${esc(f.unit)}</span>` : ''}<span class="s12 mute" style="display:block">${r0(f.kcal)} kcal · V ${n1(f.p)} · R ${n1(f.f)} · S ${n1(f.c)}</span></button>${manage ? `<button class="link" data-a="foodEdit" data-id="${f.id}">Muuda</button>` : `<button class="ib brown" data-a="foodAdd" data-id="${f.id}" aria-label="Lisa ${esc(f.name)} päeva">${I.plus}</button>`}</div>`).join('')}</div>`;
+  return `<div class="list" style="padding-right:8px">${fs.map(f => `<div class="between" style="padding:6px 0"><button class="tickrow" style="display:block" data-a="foodEdit" data-id="${f.id}" aria-label="Muuda toitu ${esc(f.name)}"><span class="sb">${esc(f.name)}</span>${f.unit ? ` <span class="mute">${esc(f.unit)}</span>` : ''}${!manage && addedToday(f) ? ` <span class="s12 brown b">× ${n1(addedToday(f))} täna</span>` : ''}<span class="s12 mute" style="display:block">${r0(f.kcal)} kcal · V ${n1(f.p)} · R ${n1(f.f)} · S ${n1(f.c)}</span></button>${manage ? `<button class="link" data-a="foodEdit" data-id="${f.id}">Muuda</button>` : `<button class="ib brown" data-a="foodAdd" data-id="${f.id}" aria-label="Lisa ${esc(f.name)} päeva">${I.plus}</button>`}</div>`).join('')}</div>`;
 }
 const foodSearch = () => `<div class="search">${I.search}<label class="vh" for="q">Otsi toitu</label><input id="q" type="search" placeholder="Otsi toitu" autocomplete="off" value="${esc(ui.q)}"></div>`;
 const SHEETS = {
@@ -389,12 +409,12 @@ const SHEETS = {
     const f = S.foods.find(x => x.id === id) || {};
     return `${sheetTop(id ? 'Muuda toitu' : 'Uus toit', 'Makrod ühe portsjoni kohta')}
     <form class="col g12" data-form="food" data-id="${id || ''}">
-      ${field('f-name', 'Nimi', `value="${esc(f.name || '')}" placeholder="nt kohupiim"`)}
+      ${field('f-name', 'Nimi', `value="${esc(f.name || '')}" placeholder="nt kohupiim" data-focus`)}
       ${field('f-unit', 'Portsjon (valikuline)', `value="${esc(f.unit || '')}" placeholder="nt 1 tk või 150 g"`)}
       ${macroFields(f)}
       <button class="btn">Salvesta</button>
     </form>
-    ${id ? `<button class="btn danger" data-a="foodDel" data-id="${id}" data-confirm>Kustuta toit</button>` : ''}`;
+    ${id ? `<button class="btn danger" data-a="foodDel" data-id="${id}">Kustuta toit</button>` : ''}`;
   },
   entry: ({ id }) => {
     const e = (S.log[ui.date] || []).find(x => x.id === id);
@@ -407,15 +427,15 @@ const SHEETS = {
       ${field('f-qty', 'Kogus (mitu portsjonit)', `value="${n1(e.qty || 1)}" inputmode="decimal"`)}
       <button class="btn">Salvesta</button>
     </form>
-    <button class="btn danger" data-a="entryDel" data-id="${id}" data-confirm>Kustuta päevast</button>`;
+    <button class="btn danger" data-a="entryDel" data-id="${id}">Kustuta päevast</button>`;
   },
   goals: () => `${sheetTop('Makrosihid', 'Päevane kalorite ja valgu siht')}
     <form class="col g12" data-form="goals"><div class="grid2">${field('f-kcal', 'Kalorid (kcal)', `value="${S.goals.kcal}" inputmode="decimal"`)}${field('f-p', 'Valk (g)', `value="${S.goals.p}" inputmode="decimal"`)}</div><div class="sub">Rasva ja süsivesikuid loetakse kokku ilma sihita.</div><button class="btn">Salvesta</button></form>`,
   weight: () => {
     const w = S.weight[ui.date];
     return `${sheetTop('Kaal', longDate(ui.date))}
-    <form class="col g12" data-form="weight">${field('f-kg', 'Kaal (kg)', `value="${w ? fmt(w, 1) : ''}" inputmode="decimal" placeholder="nt 78,4"`)}<button class="btn">Salvesta</button></form>
-    ${w ? `<button class="btn danger" data-a="weightDel" data-confirm>Kustuta selle päeva kaal</button>` : ''}`;
+    <form class="col g12" data-form="weight">${field('f-kg', 'Kaal (kg)', `data-focus value="${w ? fmt(w, 1) : ''}" inputmode="decimal" placeholder="nt 78,4"`)}<button class="btn">Salvesta</button></form>
+    ${w ? `<button class="btn danger" data-a="weightDel">Kustuta selle päeva kaal</button>` : ''}`;
   },
   plan: () => {
     const d = ui.date, plan = planOf(d), done = plan.filter(p => p.done).length, evs = eventsOn(d);
@@ -464,17 +484,17 @@ const SHEETS = {
       <div class="field"><label for="f-repeat">Kordumine</label><select class="in" id="f-repeat" name="repeat">${Object.entries(REPEAT).map(([k, l]) => `<option value="${k}"${k === (e.repeat || 'none') ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <button class="btn">Salvesta</button>
     </form>
-    ${id ? `<button class="btn danger" data-a="eventDel" data-id="${id}" data-confirm>Kustuta sündmus</button>` : ''}`;
+    ${id ? `<button class="btn danger" data-a="eventDel" data-id="${id}">Kustuta sündmus</button>` : ''}`;
   },
   target: ({ id }) => {
     const t = S.targets.find(x => x.id === id) || { kind: ui.gKind };
     return `${sheetTop(id ? 'Muuda eesmärki' : 'Uus eesmärk', id ? '' : periodInfo(ui.gKind, ui.gOff).label)}
     <form class="col g12" data-form="target" data-id="${id || ''}">
-      ${field('f-title', 'Eesmärk', `value="${esc(t.title || '')}" placeholder="nt kaal alla 78 kg"`)}
+      ${field('f-title', 'Eesmärk', `data-focus value="${esc(t.title || '')}" placeholder="nt kaal alla 78 kg"`)}
       ${id ? '' : `<div class="field"><label for="f-kind">Periood</label><select class="in" id="f-kind" name="kind">${Object.entries(KINDS).map(([k, l]) => `<option value="${k}"${k === t.kind ? ' selected' : ''}>${l}</option>`).join('')}</select></div><div class="sub">Samme saad lisada pärast salvestamist eesmärgi kaardil.</div>`}
       <button class="btn">Salvesta</button>
     </form>
-    ${id ? `<button class="btn danger" data-a="targetDel" data-id="${id}" data-confirm>Kustuta eesmärk</button>` : ''}`;
+    ${id ? `<button class="btn danger" data-a="targetDel" data-id="${id}">Kustuta eesmärk</button>` : ''}`;
   },
   visForm: ({ id }) => {
     const v = S.vision.find(x => x.id === id) || {};
@@ -522,6 +542,7 @@ function renderSheet() {
   const mini = MINI.has(ui.sheet.name); el.classList.toggle('mini', mini); shade().hidden = !mini;
   el.hidden = false; document.body.classList.add('lock');
   el.innerHTML = SHEETS[ui.sheet.name](ui.sheet);
+  const h1 = el.querySelector('h1'); el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', h1 ? h1.textContent : 'Leht'); el.tabIndex = -1;
 }
 function render() {
   const r = route(), key = r + ui.date, enter = key !== lastKey; lastKey = key;
@@ -532,10 +553,31 @@ function render() {
   loadImgs();
   if (enter) countUp();
 }
-function open(name, p = {}) { ui.sheet = Object.assign({ name }, p); render(); $('#sheet').scrollTop = 0; }
-function close() { ui.sheet = (ui.sheet && ui.sheet.back) || null; ui.q = ''; render(); }
+function open(name, p = {}) {
+  if (!ui.sheet) { const a = document.activeElement; ui.opener = a && a.dataset && a.dataset.a ? a.dataset.a : null; }
+  ui.sheet = Object.assign({ name }, p); render();
+  const el = $('#sheet'); el.scrollTop = 0; (el.querySelector('[data-focus]') || el).focus({ preventScroll: true });
+}
+function close() {
+  ui.sheet = (ui.sheet && ui.sheet.back) || null; ui.q = ''; render();
+  if (!ui.sheet && ui.opener && /^[A-Za-z]+$/.test(ui.opener)) { const o = document.querySelector(`#view [data-a="${ui.opener}"], #nav [data-a="${ui.opener}"]`); if (o) o.focus({ preventScroll: true }); }
+}
 let tt;
-function toast(m) { const el = $('#toast'); el.textContent = m; el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, 2200); }
+function toast(m, label, fn) {
+  const el = $('#toast'); el.textContent = m;
+  if (label) { const b = document.createElement('button'); b.className = 'tbtn'; b.textContent = label; b.onclick = () => { el.hidden = true; fn(); }; el.append(b); }
+  el.hidden = false; clearTimeout(tt); tt = setTimeout(() => { el.hidden = true; }, label ? 6000 : 2200);
+}
+// Kustutamine toimub kohe, aga 6 sekundi jooksul saab selle tagasi võtta.
+function withUndo(msg, fn) {
+  const snap = JSON.stringify(S); fn();
+  toast(msg, 'Võta tagasi', () => { S = normalize(JSON.parse(snap)); save(); render(); toast('Taastatud'); });
+}
+function backupHint() {
+  if (Object.keys(S.log).length < 7 || (S.lastBackup && S.lastBackup >= addDays(today(), -30))) return '';
+  return `<a class="empty" href="#rohkem" style="display:block;text-decoration:none">${S.lastBackup ? 'Viimasest varukoopiast on üle 30 päeva.' : 'Sul on juba palju andmeid, aga varukoopiat pole tehtud.'} <span class="brown b" style="text-decoration:underline">Tee varukoopia</span></a>`;
+}
+const addedToday = f => (S.log[ui.date] || []).filter(e => e.name === f.name).reduce((n, e) => n + (e.qty || 1), 0);
 const shiftM = (o, n) => { const d = new Date(o.y, o.m + n, 1); return { y: d.getFullYear(), m: d.getMonth() }; };
 const findTarget = id => S.targets.find(t => t.id === id);
 
@@ -555,31 +597,31 @@ const A = {
   histSel: ({ d }) => { ui.histSel = d; render(); },
   histOpen: () => { ui.date = ui.histSel; ui.sheet = null; render(); },
   entry: ({ id }) => open('entry', { id }),
-  entryDel: ({ id }) => { S.log[ui.date] = (S.log[ui.date] || []).filter(e => e.id !== id); if (!S.log[ui.date].length) delete S.log[ui.date]; save(); close(); toast('Kustutatud'); },
+  entryDel: ({ id }) => withUndo('Toit kustutatud', () => { S.log[ui.date] = (S.log[ui.date] || []).filter(e => e.id !== id); if (!S.log[ui.date].length) delete S.log[ui.date]; save(); close(); }),
   foodNew: () => open('foodForm', { back: ui.sheet }),
   foodEdit: ({ id }) => open('foodForm', { id, back: ui.sheet }),
-  foodDel: ({ id }) => { S.foods = S.foods.filter(f => f.id !== id); save(); close(); toast('Toit kustutatud'); },
+  foodDel: ({ id }) => withUndo('Toit kustutatud', () => { S.foods = S.foods.filter(f => f.id !== id); save(); close(); }),
   foodAdd: ({ id }) => {
     const f = S.foods.find(x => x.id === id); if (!f) return;
     (S.log[ui.date] = S.log[ui.date] || []).push({ id: uid(), name: f.name, unit: f.unit || '', qty: 1, kcal: f.kcal, p: f.p, f: f.f, c: f.c });
-    save(); toast(`Lisatud: ${f.name}`);
+    save(); const fl = $('#foodlist'); if (fl) fl.innerHTML = foodRows(false); toast(`Lisatud: ${f.name}`);
   },
-  weightDel: () => { delete S.weight[ui.date]; save(); close(); },
+  weightDel: () => withUndo('Kaal kustutatud', () => { delete S.weight[ui.date]; save(); close(); }),
   planTick: ({ id }) => { const p = (S.plan[ui.date] || []).find(x => x.id === id); if (p) { p.done = !p.done; save(); render(); } },
-  planDel: ({ id }) => { S.plan[ui.date] = (S.plan[ui.date] || []).filter(p => p.id !== id); if (!S.plan[ui.date].length) delete S.plan[ui.date]; save(); render(); },
+  planDel: ({ id }) => withUndo('Kustutatud', () => { S.plan[ui.date] = (S.plan[ui.date] || []).filter(p => p.id !== id); if (!S.plan[ui.date].length) delete S.plan[ui.date]; save(); render(); }),
   calM: ({ n }) => { ui.calM = shiftM(ui.calM, +n); render(); },
   calDay: ({ d }) => open('event', { date: d }),
   eventNew: () => open('event', { date: today() }),
   eventEdit: ({ id }) => open('event', { id }),
-  eventDel: ({ id }) => { S.events = S.events.filter(e => e.id !== id); save(); ui.sheet = null; render(); toast('Sündmus kustutatud'); },
+  eventDel: ({ id }) => withUndo('Sündmus kustutatud', () => { S.events = S.events.filter(e => e.id !== id); save(); ui.sheet = null; render(); }),
   gKind: ({ k }) => { ui.gKind = k; ui.gOff = 0; render(); },
   gOff: ({ n }) => { ui.gOff += +n; render(); },
   targetNew: () => open('target'),
   targetEdit: ({ id }) => open('target', { id }),
-  targetDel: ({ id }) => { S.targets = S.targets.filter(t => t.id !== id); save(); close(); toast('Eesmärk kustutatud'); },
+  targetDel: ({ id }) => withUndo('Eesmärk kustutatud', () => { S.targets = S.targets.filter(t => t.id !== id); save(); close(); }),
   targetTick: ({ id }) => { const t = findTarget(id); if (t) { t.done = !t.done; save(); render(); } },
   stepTick: ({ t, id }) => { const s = (findTarget(t) || { steps: [] }).steps.find(x => x.id === id); if (s) { s.done = !s.done; save(); render(); } },
-  stepDel: ({ t, id }) => { const g = findTarget(t); if (g) { g.steps = g.steps.filter(s => s.id !== id); save(); render(); } },
+  stepDel: ({ t, id }) => withUndo('Samm kustutatud', () => { const g = findTarget(t); if (g) { g.steps = g.steps.filter(s => s.id !== id); save(); render(); } }),
   avg: ({ k }) => { ui.avg = k; render(); },
   visNew: () => open('visForm'),
   visView: ({ id }) => open('visView', { id }),
@@ -591,14 +633,15 @@ const A = {
     ui.sheet = null; render(); toast('Pilt kustutatud');
   },
   export: () => {
+    S.lastBackup = today(); save();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' }));
     a.download = `abiline-${today()}.json`;
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-    toast('Varukoopia alla laaditud');
+    render(); toast('Varukoopia alla laaditud');
   },
-  importDo: () => { S = normalize(ui.pending); ui.pending = null; save(); ui.sheet = null; render(); toast('Andmed taastatud'); },
+  importDo: () => { if (!ui.pending) return close(); S = normalize(ui.pending); ui.pending = null; save(); ui.sheet = null; render(); toast('Andmed taastatud'); },
 };
 
 // ---------- vormid ----------
@@ -607,6 +650,7 @@ const F = {
   quick: fd => {
     const name = fd.name.trim(); if (!name) return toast('Kirjuta toidu nimi');
     const m = macrosOf(fd);
+    if (!(m.kcal || m.p || m.f || m.c)) return toast('Lisa vähemalt kalorid');
     (S.log[ui.date] = S.log[ui.date] || []).push(Object.assign({ id: uid(), name, unit: '', qty: 1 }, m));
     if (fd.save) S.foods.push(Object.assign({ id: uid(), name, unit: '' }, m));
     save(); render(); toast(`Lisatud: ${name}`);
@@ -614,6 +658,7 @@ const F = {
   food: (fd, form) => {
     const name = fd.name.trim(); if (!name) return toast('Kirjuta toidu nimi');
     const data = Object.assign({ name, unit: fd.unit.trim() }, macrosOf(fd)), id = form.dataset.id;
+    if (!(data.kcal || data.p || data.f || data.c)) return toast('Lisa vähemalt kalorid');
     const f = S.foods.find(x => x.id === id);
     if (f) Object.assign(f, data); else S.foods.push(Object.assign({ id: uid() }, data));
     save(); close(); toast('Toit salvestatud');
@@ -627,13 +672,13 @@ const F = {
   weight: fd => { const kg = num(fd.kg); if (!kg) return toast('Kirjuta kaal kilodes'); S.weight[ui.date] = Math.round(kg * 10) / 10; save(); close(); toast('Kaal salvestatud'); },
   plan: fd => {
     const text = fd.text.trim(); if (!text) return toast('Kirjuta, mida teed');
-    (S.plan[ui.date] = S.plan[ui.date] || []).push({ id: uid(), text, time: fd.time || '', done: false });
+    (S.plan[ui.date] = S.plan[ui.date] || []).push({ id: uid(), text, time: sTime(fd.time), done: false });
     save(); render(); const el = $('#p-text'); if (el) el.focus();
   },
   event: (fd, form) => {
     const title = fd.title.trim(); if (!title) return toast('Kirjuta, mis toimub');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fd.date)) return toast('Vali kuupäev');
-    const data = { title, date: fd.date, end: /^\d{4}-\d{2}-\d{2}$/.test(fd.end || '') && fd.end > fd.date ? fd.end : '', time: fd.time || '', repeat: fd.repeat || 'none' };
+    const data = { title, date: fd.date, end: /^\d{4}-\d{2}-\d{2}$/.test(fd.end || '') && fd.end > fd.date ? fd.end : '', time: sTime(fd.time), repeat: REPEAT[fd.repeat] ? fd.repeat : 'none' };
     const e = S.events.find(x => x.id === form.dataset.id);
     if (e) Object.assign(e, data); else S.events.push(Object.assign({ id: uid() }, data));
     save(); ui.calM = ym(fd.date); ui.sheet = null; render(); toast('Sündmus salvestatud');
@@ -661,7 +706,7 @@ const F = {
       v.title = fd.title.trim(); v.comment = fd.comment.trim();
       if (!S.vision.includes(v)) S.vision.push(v);
       save(); close(); toast('Salvestatud');
-    } catch (e) { btn.disabled = false; btn.textContent = 'Salvesta'; toast('Pildi salvestamine ei õnnestunud'); }
+    } catch (e) { btn.disabled = false; btn.textContent = 'Salvesta'; toast('Seda faili ei saa pildina kasutada'); }
   },
 };
 
@@ -688,9 +733,10 @@ document.addEventListener('change', async e => {
   if (e.target.dataset.in !== 'import') return;
   const file = e.target.files[0]; if (!file) return;
   try {
+    if (file.size > 5 * 1024 * 1024) throw new Error('liiga suur');
     const data = JSON.parse(await file.text());
     if (!data || typeof data !== 'object' || !data.goals || !data.log) throw new Error('vale fail');
-    ui.pending = data; open('importConfirm');
+    ui.pending = normalize(data); e.target.value = ''; open('importConfirm');
   } catch (err) { e.target.value = ''; toast('See fail ei ole Abilise varukoopia'); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.sheet) close(); });
@@ -702,6 +748,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 render();
+// Palub brauseril andmeid mitte ise ära kustutada, kui seadmes ruum otsa saab.
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 { const sp = $('#splash'); if (sp) setTimeout(() => { sp.classList.add('out'); lastKey = ''; render(); setTimeout(() => sp.remove(), 600); }, 1000); }
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(() => {}); });
