@@ -196,6 +196,20 @@ const macroFields = (v = {}) => `<div class="four">${[['kcal', 'Kcal'], ['p', 'V
 const field = (id, label, attrs = '') => `<div class="field"><label for="${id}">${label}</label><input class="in" id="${id}" name="${id.replace(/^f-/, '')}" autocomplete="off" ${attrs}></div>`;
 const dayNav = () => `<div class="row8"><button class="ib" data-a="day" data-n="-1" aria-label="Eelmine päev">${I.left}</button><button class="ib" data-a="day" data-n="1" aria-label="Järgmine päev">${I.right}</button></div>`;
 
+function streak() { let n = 0, d = today(); if (!(S.log[d] || []).length) d = addDays(d, -1); while ((S.log[d] || []).length) { n++; d = addDays(d, -1); } return n; }
+const streakChip = () => { const n = streak(); return n > 1 ? `<span class="streak" role="img" aria-label="${n} päeva järjest sisestatud"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c1 3.5 5 5.5 5 10.5a5 5 0 0 1-10 0c0-2 .8-3.3 2-4.5 0 2 .8 3 2 3 .3-3-1-5.500 1-9z"/></svg>${n}</span>` : ''; };
+function weekStrip(sel) {
+  const mon = addDays(sel, -((pd(sel).getDay() + 6) % 7)), t = today(); let h = '';
+  for (let i = 0; i < 7; i++) { const x = addDays(mon, i), st = dayStatus(x), dd = pd(x); h += `<button class="wk${x === sel ? ' on' : ''}${x === t ? ' now' : ''}" data-a="goDay" data-d="${x}" aria-pressed="${x === sel}" aria-label="${longDate(x)}, ${STATUS[st]}"><span class="s11">${WD1[dd.getDay()]}</span><span class="sb">${dd.getDate()}</span><i class="${st}"></i></button>`; }
+  return `<div class="week">${h}</div>`;
+}
+function spark(date) {
+  const ks = Object.keys(S.weight).filter(k => k <= date && k >= addDays(date, -30)).sort(); if (ks.length < 2) return '';
+  const v = ks.map(k => S.weight[k]), lo = Math.min(...v), hi = Math.max(...v), t0 = pd(ks[0]).getTime(), t1 = pd(ks[ks.length - 1]).getTime();
+  const p = ks.map((k, i) => `${i ? 'L' : 'M'}${(2 + (pd(k).getTime() - t0) / (t1 - t0) * 52).toFixed(1)} ${(2 + (hi === lo ? 0.5 : (hi - v[i]) / (hi - lo)) * 18).toFixed(1)}`).join('');
+  return `<svg class="spark" width="56" height="22" viewBox="0 0 56 22" aria-hidden="true"><path d="${p}" fill="none" stroke="#7a4a2b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
 // ---------- olek ----------
 const TABS = ['kodu', 'kalender', 'eesmargid', 'visioon', 'rohkem'];
 const route = () => { const h = location.hash.slice(1); return TABS.includes(h) ? h : 'kodu'; };
@@ -217,11 +231,12 @@ function vHome() {
   return `
   <header class="top">
     <button class="daybtn" data-a="hist" aria-label="Ava ajaloo kalender"><span class="h1">${dayLabel(d)} ${I.down}</span><span class="sub">${longDate(d)}</span></button>
-    ${dayNav()}
+    <div class="row8">${streakChip()}${dayNav()}</div>
   </header>
+  ${weekStrip(d)}
   <section class="card dark hero" aria-label="Päeva makrod">
     <div class="bigring">${ring(148, 64, 14, g.kcal ? t.kcal / g.kcal : 0, '#2a5145', '#f4f0e8')}
-      <div class="bigring-t"><div class="num xl">${r0(Math.abs(left))}</div><div class="s12 mint">${left >= 0 ? 'kcal jäänud' : 'kcal üle'}</div><div class="s11 mint">${r0(t.kcal)} / ${r0(g.kcal)}</div></div>
+      <div class="bigring-t"><div class="num xl" data-count="${r0(Math.abs(left))}">${r0(Math.abs(left))}</div><div class="s12 mint">${left >= 0 ? 'kcal jäänud' : 'kcal üle'}</div><div class="s11 mint">${r0(t.kcal)} / ${r0(g.kcal)}</div></div>
     </div>
     <div class="macros">${macro('Valk', t.p, g.p, '#d9a066')}${macroPlain('Rasv', t.f, '#f0d9a8')}${macroPlain('Süsivesikud', t.c, '#8fc7a8')}<button class="link" data-a="goals" style="min-height:44px;margin:-8px 0 -12px;text-decoration:underline;font-weight:600">Muuda sihte</button></div>
   </section>
@@ -231,8 +246,8 @@ function vHome() {
       : `<div class="empty">Sel päeval pole veel midagi kirjas. Lisa esimene toit nupust „Lisa toit“.</div>`}
   </section>
   <section class="grid2">
-    <button class="card" data-a="weight"><span class="s12 mute">Kaal</span><span class="num l green">${w ? `${fmt(w.kg, 1)} kg` : '–'}</span><span class="s12 mute">${wSub}</span></button>
-    <button class="card" data-a="plan"><span class="s12 mute">Päevaplaan</span><span class="num l green">${plan.length ? `${done} / ${plan.length}` : '–'}</span><span class="s12 mute cut" style="max-width:100%">${!plan.length ? 'Lisa plaan' : next ? `Järgmine: ${next.time ? next.time + ' ' : ''}${esc(next.text)}` : 'Kõik tehtud'}</span></button>
+    <button class="card" data-a="weight"><span class="s12 mute">Kaal</span><span class="num l green">${w ? `${fmt(w.kg, 1)} kg` : '–'}</span><span class="s12 mute">${wSub}</span>${spark(d)}</button>
+    <button class="card" data-a="plan"><span class="s12 mute">Päevaplaan</span><span class="num l green">${plan.length ? `${done} / ${plan.length}` : '–'}</span><span class="s12 mute cut" style="max-width:100%">${!plan.length ? 'Lisa plaan' : next ? `Järgmine: ${next.time ? next.time + ' ' : ''}${esc(next.text)}` : 'Kõik tehtud'}</span>${plan.length ? `<span class="bar thin" style="width:100%;margin-top:6px"><i style="width:${Math.round(done / plan.length * 100)}%;background:var(--green)"></i></span>` : ''}</button>
   </section>`;
 }
 
@@ -494,18 +509,28 @@ function nav(r) {
     + `<div class="fabw"><button class="fab" data-a="add" aria-label="Lisa">${I.plusL}</button></div>`
     + it('eesmargid', 'Eesmärgid', I.target, r === 'eesmargid' || r === 'visioon') + it('rohkem', 'Rohkem', I.menu, r === 'rohkem');
 }
+const MINI = new Set(['add', 'weight', 'goals', 'entry', 'target', 'importConfirm']);
+function shade() { let s = $('#shade'); if (!s) { s = document.createElement('div'); s.id = 'shade'; s.hidden = true; s.dataset.a = 'close'; $('#app').insertBefore(s, $('#sheet')); } return s; }
+let lastKey = '';
+function countUp() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelectorAll('#view [data-count]').forEach(el => { const to = +el.dataset.count, t0 = performance.now(); const step = t => { const k = Math.min(1, (t - t0) / 800), e = 1 - Math.pow(1 - k, 3); el.textContent = Math.round(to * e); if (k < 1 && el.isConnected) requestAnimationFrame(step); }; requestAnimationFrame(step); });
+}
 function renderSheet() {
   const el = $('#sheet');
-  if (!ui.sheet) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('lock'); return; }
+  if (!ui.sheet) { el.hidden = true; el.innerHTML = ''; document.body.classList.remove('lock'); shade().hidden = true; return; }
+  const mini = MINI.has(ui.sheet.name); el.classList.toggle('mini', mini); shade().hidden = !mini;
   el.hidden = false; document.body.classList.add('lock');
   el.innerHTML = SHEETS[ui.sheet.name](ui.sheet);
 }
 function render() {
-  const r = route();
+  const r = route(), key = r + ui.date, enter = key !== lastKey; lastKey = key;
+  $('#view').classList.toggle('enter', enter);
   $('#view').innerHTML = ({ kodu: vHome, kalender: vCal, eesmargid: vGoals, visioon: vVision, rohkem: vMore })[r]();
   $('#nav').innerHTML = nav(r);
   renderSheet();
   loadImgs();
+  if (enter) countUp();
 }
 function open(name, p = {}) { ui.sheet = Object.assign({ name }, p); render(); $('#sheet').scrollTop = 0; }
 function close() { ui.sheet = (ui.sheet && ui.sheet.back) || null; ui.q = ''; render(); }
@@ -518,6 +543,7 @@ const findTarget = id => S.targets.find(t => t.id === id);
 const A = {
   close,
   day: ({ n }) => { ui.date = addDays(ui.date, +n); render(); },
+  goDay: ({ d }) => { ui.date = d; render(); },
   add: () => open('add'),
   food: () => open('food'),
   foods: () => open('foods'),
