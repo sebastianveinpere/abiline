@@ -20,7 +20,8 @@ const sMacros = x => ({ kcal: sNum(x.kcal), p: sNum(x.p), f: sNum(x.f), c: sNum(
 function normalize(r) {
   r = r && typeof r === 'object' ? r : {};
   const g = r.goals && typeof r.goals === 'object' ? r.goals : {};
-  const s = { v: 1, goals: { kcal: 'kcal' in g ? sNum(g.kcal) : DEF.goals.kcal, p: 'p' in g ? sNum(g.p) : DEF.goals.p, f: sNum(g.f), c: sNum(g.c) }, foods: [], log: {}, weight: {}, plan: {}, events: [], targets: [], vision: [], lastBackup: sDate(r.lastBackup) };
+  const s = { v: 1, goals: { kcal: 'kcal' in g ? sNum(g.kcal) : DEF.goals.kcal, p: 'p' in g ? sNum(g.p) : DEF.goals.p, f: sNum(g.f), c: sNum(g.c) }, foods: [], log: {}, weight: {}, plan: {}, events: [], targets: [], vision: [], off: {}, lastBackup: sDate(r.lastBackup) };
+  for (const k of sDays(r.off)) s.off[k] = sStr(r.off[k], 300);
   s.foods = sArr(r.foods).map(x => Object.assign({ id: sId(x.id), name: sStr(x.name), unit: sStr(x.unit, 40) }, sMacros(x)));
   for (const k of sDays(r.log)) { const a = sArr(r.log[k], 200).map(x => Object.assign({ id: sId(x.id), name: sStr(x.name), unit: sStr(x.unit, 40), qty: sNum(x.qty, 1000) || 1 }, sMacros(x))); if (a.length) s.log[k] = a; }
   for (const k of sDays(r.weight)) { const n = sNum(r.weight[k], 1000); if (n) s.weight[k] = n; }
@@ -115,13 +116,14 @@ function dayTotals(date) {
 }
 // Päeva hinne: kalorid ±10% sihist ja valk vähemalt 95% sihist.
 function dayStatus(date) {
+  if (date in S.off) return 'off';
   const t = dayTotals(date), g = S.goals;
   if (!t.n) return 'none';
   const k = g.kcal > 0 && Math.abs(t.kcal - g.kcal) <= g.kcal * 0.1;
   const p = g.p > 0 && t.p >= g.p * 0.95;
   return k && p ? 'good' : (k || p) ? 'half' : 'miss';
 }
-const STATUS = { good: 'Sihid täis', half: 'Pooleldi', miss: 'Mööda', none: 'Sisestamata' };
+const STATUS = { good: 'Sihid täis', half: 'Pooleldi', miss: 'Mööda', none: 'Sisestamata', off: 'Läks metsa' };
 function weightAt(date) {
   const ks = Object.keys(S.weight).filter(k => k <= date).sort();
   const k = ks[ks.length - 1];
@@ -183,7 +185,7 @@ function averages(days) {
   const t = { kcal: 0, p: 0, f: 0, c: 0 }; let n = 0, d = today();
   for (let i = 0; i < days; i++) {
     const x = dayTotals(d);
-    if (x.n) { n++; t.kcal += x.kcal; t.p += x.p; t.f += x.f; t.c += x.c; }
+    if (x.n && !(d in S.off)) { n++; t.kcal += x.kcal; t.p += x.p; t.f += x.f; t.c += x.c; }
     d = addDays(d, -1);
   }
   if (n) for (const k in t) t[k] /= n;
@@ -214,7 +216,8 @@ const macroFields = (v = {}) => `<div class="four">${[['kcal', 'Kcal'], ['p', 'V
 const field = (id, label, attrs = '') => `<div class="field"><label for="${id}">${label}</label><input class="in" id="${id}" name="${id.replace(/^f-/, '')}" autocomplete="off" ${attrs}></div>`;
 const dayNav = () => `<div class="row8"><button class="ib" data-a="day" data-n="-1" aria-label="Eelmine päev">${I.left}</button><button class="ib" data-a="day" data-n="1" aria-label="Järgmine päev">${I.right}</button></div>`;
 
-function streak() { let n = 0, d = today(); if (!(S.log[d] || []).length) d = addDays(d, -1); while ((S.log[d] || []).length) { n++; d = addDays(d, -1); } return n; }
+// Metsa läinud päev ei katkesta järjestikuste päevade loendurit, aga ei lähe ka arvesse.
+function streak() { const has = d => (S.log[d] || []).length > 0; let n = 0, d = today(); if (!has(d) && !(d in S.off)) d = addDays(d, -1); while (has(d) || d in S.off) { if (!(d in S.off)) n++; d = addDays(d, -1); } return n; }
 const streakChip = () => { const n = streak(); return n > 1 ? `<span class="streak" role="img" aria-label="${n} päeva järjest sisestatud"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c1 3.5 5 5.5 5 10.5a5 5 0 0 1-10 0c0-2 .8-3.3 2-4.5 0 2 .8 3 2 3 .3-3-1-5.500 1-9z"/></svg>${n}</span>` : ''; };
 function weekStrip(sel) {
   const mon = addDays(sel, -((pd(sel).getDay() + 6) % 7)), t = today(); let h = '';
@@ -254,6 +257,7 @@ function vHome() {
     <div class="row8">${streakChip()}${dayNav()}</div>
   </header>
   ${weekStrip(d)}
+  ${d in S.off ? `<button class="card offcard" data-a="off"><span class="between"><span class="b">See päev läks metsa</span><span class="s12 brown b">Muuda</span></span>${S.off[d] ? `<span class="s12 mute" style="white-space:pre-wrap">${esc(S.off[d])}</span>` : ''}<span class="s12 mute">Seda päeva keskmistes ei arvestata.</span></button>` : ''}
   <section class="card dark hero" aria-label="Päeva makrod">
     <div class="bigring">${ring(148, 64, 14, g.kcal ? t.kcal / g.kcal : 0, '#2a5145', '#f4f0e8')}
       <div class="bigring-t"><div class="num xl" data-count="${r0(Math.abs(left))}">${r0(Math.abs(left))}</div><div class="s12 mint">${left >= 0 ? 'kcal jäänud' : 'kcal üle'}</div><div class="s11 mint">${r0(t.kcal)} / ${r0(g.kcal)}</div></div>
@@ -268,7 +272,7 @@ function vHome() {
   <section class="grid2">
     <button class="card" data-a="weight"><span class="s12 mute">Kaal</span><span class="num l green">${w ? `${fmt(w.kg, 1)} kg` : '–'}</span><span class="s12 mute">${wSub}</span>${spark(d)}</button>
     <button class="card" data-a="plan"><span class="s12 mute">Päevaplaan</span><span class="num l green">${plan.length ? `${done} / ${plan.length}` : '–'}</span><span class="s12 mute cut" style="max-width:100%">${!plan.length ? 'Lisa plaan' : next ? `Järgmine: ${next.time ? next.time + ' ' : ''}${esc(next.text)}` : 'Kõik tehtud'}</span>${plan.length ? `<span class="bar thin" style="width:100%;margin-top:6px"><i style="width:${Math.round(done / plan.length * 100)}%;background:var(--green)"></i></span>` : ''}</button>
-  </section>${backupHint()}`;
+  </section>${d in S.off ? '' : `<button class="link" data-a="off" style="align-self:center;color:var(--mute);font-weight:600;text-decoration:underline">Päev läks metsa?</button>`}${backupHint()}`;
 }
 
 function vCal() {
@@ -387,7 +391,7 @@ function foodRows(manage) {
 const foodSearch = () => `<div class="search">${I.search}<label class="vh" for="q">Otsi toitu</label><input id="q" type="search" placeholder="Otsi toitu" autocomplete="off" value="${esc(ui.q)}"></div>`;
 const SHEETS = {
   add: () => `${sheetTop('Lisa', longDate(ui.date))}
-    <div class="col g8">${[['food', 'Toit', 'Söödud toit ja makrod'], ['weight', 'Kaal', 'Selle päeva kaalumine'], ['plan', 'Päevaplaan', 'Tegevus selleks päevaks'], ['eventNew', 'Sündmus', 'Üritus, tähtpäev või pikem periood'], ['targetNew', 'Eesmärk', 'Kuu, kvartali, poole aasta või aasta siht'], ['visNew', 'Visiooni pilt', 'Pilt ja kommentaar visioonitahvlile']].map(([a, t, d]) => `<button class="card" data-a="${a}" style="padding:16px"><span class="b" style="font-size:17px">${t}</span><span class="s12 mute">${d}</span></button>`).join('')}</div>`,
+    <div class="col g8">${[['food', 'Toit', 'Söödud toit ja makrod'], ['weight', 'Kaal', 'Selle päeva kaalumine'], ['plan', 'Päevaplaan', 'Tegevus selleks päevaks'], ['eventNew', 'Sündmus', 'Üritus, tähtpäev või pikem periood'], ['targetNew', 'Eesmärk', 'Kuu, kvartali, poole aasta või aasta siht'], ['visNew', 'Visiooni pilt', 'Pilt ja kommentaar visioonitahvlile'], ['off', 'Päev läks metsa', 'Märgi päev, mis ei läinud plaani järgi']].map(([a, t, d]) => `<button class="card" data-a="${a}" style="padding:16px"><span class="b" style="font-size:17px">${t}</span><span class="s12 mute">${d}</span></button>`).join('')}</div>`,
   food: () => `${sheetTop('Lisa toit', longDate(ui.date))}
     <form class="card dark col g12" data-form="quick">
       <div class="between base"><h2 class="h2">Kiirlisamine</h2><span class="s12 mint">ainult selle päeva alla</span></div>
@@ -431,6 +435,16 @@ const SHEETS = {
   },
   goals: () => `${sheetTop('Makrosihid', 'Päevane kalorite ja valgu siht')}
     <form class="col g12" data-form="goals"><div class="grid2">${field('f-kcal', 'Kalorid (kcal)', `value="${S.goals.kcal}" inputmode="decimal"`)}${field('f-p', 'Valk (g)', `value="${S.goals.p}" inputmode="decimal"`)}</div><div class="sub">Rasva ja süsivesikuid loetakse kokku ilma sihita.</div><button class="btn">Salvesta</button></form>`,
+  off: () => {
+    const d = ui.date, on = d in S.off;
+    return `${sheetTop('Päev läks metsa', longDate(d))}
+    <div class="sub">Juhtub. Märgi päev ära ja liigu edasi: seda ei arvestata keskmistes ja see ei katkesta järjestikuste päevade loendurit.</div>
+    <form class="col g12" data-form="off">
+      <div class="field"><label for="f-note">Mis juhtus? (valikuline)</label><textarea class="in" id="f-note" name="note" maxlength="300" placeholder="nt sünnipäev, reis, haige, ei viitsinud" style="min-height:84px">${esc(S.off[d] || '')}</textarea></div>
+      <button class="btn">${on ? 'Salvesta' : 'Märgi päev ära'}</button>
+    </form>
+    ${on ? `<button class="btn danger" data-a="offDel">Võta märge maha</button>` : ''}`;
+  },
   weight: () => {
     const w = S.weight[ui.date];
     return `${sheetTop('Kaal', longDate(ui.date))}
@@ -463,9 +477,10 @@ const SHEETS = {
     return `<header class="top"><button class="ib" data-a="histM" data-n="-1" aria-label="Eelmine kuu">${I.left}</button><h1 class="h1" style="font-size:28px;letter-spacing:.04em">${MON[m]} ${y}</h1><button class="ib" data-a="histM" data-n="1" aria-label="Järgmine kuu">${I.right}</button></header>
     <div class="hwd"><span>E</span><span>T</span><span>K</span><span>N</span><span>R</span><span>L</span><span>P</span></div>
     <div class="hmonth">${cells}</div>
-    <div class="legend"><span><i style="background:var(--green)"></i>Sihid täis</span><span><i style="background:var(--half)"></i>Pooleldi</span><span><i style="border:2px solid var(--brown)"></i>Mööda</span><span><i style="border:2px dashed var(--green)"></i>Täna</span></div>
+    <div class="legend"><span><i style="background:var(--green)"></i>Sihid täis</span><span><i style="background:var(--half)"></i>Pooleldi</span><span><i style="border:2px solid var(--brown)"></i>Mööda</span><span><i style="border:2px dotted #8d958f"></i>Läks metsa</span><span><i style="border:2px dashed var(--green)"></i>Täna</span></div>
     <section class="card dark col g12">
       <div class="between base"><h2 class="h2">${longDate(sel)}</h2><span class="s12 mint">${STATUS[st]}</span></div>
+      ${st === 'off' && S.off[sel] ? `<div class="mint" style="font-size:14px;white-space:pre-wrap">${esc(S.off[sel])}</div>` : ''}
       ${tt.n ? `<div class="four"><div><div class="num l">${r0(tt.kcal)}</div><div class="s12 mint">kcal</div></div><div><div class="num l">${r0(tt.p)} g</div><div class="s12 mint">valk</div></div><div><div class="num l">${r0(tt.f)} g</div><div class="s12 mint">rasv</div></div><div><div class="num l">${r0(tt.c)} g</div><div class="s12 mint">süsiv.</div></div></div>` : `<div class="mint" style="font-size:14px">Sel päeval pole toitu sisestatud.</div>`}
       <div class="between" style="border-top:1px solid var(--green2);padding-top:12px"><span style="font-size:14px">Kaal <span class="b">${w ? fmt(w, 1) + ' kg' : '–'}</span></span><button class="link" style="color:var(--sand);text-decoration:underline" data-a="histOpen">Ava see päev</button></div>
     </section>
@@ -529,7 +544,7 @@ function nav(r) {
     + `<div class="fabw"><button class="fab" data-a="add" aria-label="Lisa">${I.plusL}</button></div>`
     + it('eesmargid', 'Eesmärgid', I.target, r === 'eesmargid' || r === 'visioon') + it('rohkem', 'Rohkem', I.menu, r === 'rohkem');
 }
-const MINI = new Set(['add', 'weight', 'goals', 'entry', 'target', 'importConfirm']);
+const MINI = new Set(['add', 'off', 'weight', 'goals', 'entry', 'target', 'importConfirm']);
 function shade() { let s = $('#shade'); if (!s) { s = document.createElement('div'); s.id = 'shade'; s.hidden = true; s.dataset.a = 'close'; $('#app').insertBefore(s, $('#sheet')); } return s; }
 let lastKey = '';
 function countUp() {
@@ -591,6 +606,8 @@ const A = {
   foods: () => open('foods'),
   goals: () => open('goals'),
   weight: () => open('weight'),
+  off: () => open('off'),
+  offDel: () => withUndo('Märge maha võetud', () => { delete S.off[ui.date]; save(); ui.sheet = null; render(); }),
   plan: () => open('plan'),
   hist: () => { ui.histM = ym(ui.date); ui.histSel = ui.date; open('hist'); },
   histM: ({ n }) => { ui.histM = shiftM(ui.histM, +n); render(); },
@@ -669,6 +686,7 @@ const F = {
     save(); close();
   },
   goals: fd => { Object.assign(S.goals, { kcal: num(fd.kcal), p: num(fd.p) }); save(); close(); toast('Sihid salvestatud'); },
+  off: fd => { S.off[ui.date] = sStr((fd.note || '').trim(), 300); save(); ui.sheet = null; render(); toast('Päev märgitud'); },
   weight: fd => { const kg = num(fd.kg); if (!kg) return toast('Kirjuta kaal kilodes'); S.weight[ui.date] = Math.round(kg * 10) / 10; save(); close(); toast('Kaal salvestatud'); },
   plan: fd => {
     const text = fd.text.trim(); if (!text) return toast('Kirjuta, mida teed');
