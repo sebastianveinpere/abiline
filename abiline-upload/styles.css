@@ -234,3 +234,9 @@ button.card{position:relative}
 .tbtn{border:0;background:none;color:#f0d9a8;font-weight:700;min-height:44px;margin:-10px -4px -10px 0;padding:0 4px;text-decoration:underline;flex:none}
 button.link[aria-label]{min-width:44px;justify-content:center}
 #sheet:focus{outline:none}
+
+/* ---------- metsa läinud päev ---------- */
+button.offcard{border:2px dotted #8d958f;background:#fff;gap:4px}
+.hd.off{border:2px dotted #8d958f;color:var(--mute);text-decoration:line-through}
+.wk i.off{background:#8d958f;border-radius:1px}
+.wk.on i.off{background:var(--mint)}
